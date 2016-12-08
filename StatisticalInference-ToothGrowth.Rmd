@@ -1,0 +1,117 @@
+---
+title: 'Statistical Inference Course Project: Tooth Growth'
+author: "Rich Morrison"
+date: "July 5, 2016"
+output: pdf_document
+---
+## Overview
+This course project analyzes the ToothGrowth data in the R datasets package. The response is the length of odontoblasts (cells responsible for tooth growth) in 60 guinea pigs. Each animal received one of three dose levels of vitamin C (0.5, 1, and 2 mg/day) by one of two delivery methods, (orange juice or ascorbic acid (a form of vitamin C and coded as VC). 
+
+The data frame has 60 observations of 3 variables:  
+
+* len: numeric - Tooth length
+* supp: factor - supplement type (VC or OJ)
+* dose: numeric - dose in milligrams/day
+
+## Exploratory Analysis
+The ToothGrowth data is loaded from the datasets package. The following basic exploratory R data analyses functions were run.
+
+```{r}
+# load ToothGrowth data
+library(datasets)
+data(ToothGrowth)
+dim(ToothGrowth)
+str(ToothGrowth)
+head(ToothGrowth)
+tail(ToothGrowth)
+sum(is.na(ToothGrowth))
+summary(ToothGrowth)
+with(ToothGrowth, table(supp, dose))
+```
+
+Tooth lengths are given in response to 2 supp levels and 3 dose levels. There are no missing values or NA values in the data set. The range of values for each variable appears to be reasonable with no extreme values indicating data error or corruption.  
+
+A basic summary of the lengths versus supplement and dose follows:
+```{r}
+# summary of the data means
+with(ToothGrowth, tapply(len, list(supp, dose), mean))
+# summary of the data standard deviations
+with(ToothGrowth, tapply(len, list(supp, dose), sd))
+# summary of the data minimums
+with(ToothGrowth, tapply(len, list(supp, dose), min))
+# summary of the data maximums
+with(ToothGrowth, tapply(len, list(supp, dose), max))
+```
+
+## Comparison
+To compare the data, the next code chunk creates a series of boxplots.  Each box represents the observed lengths as measured in response to a combined interaction of supplement type and dose amount. For example, a 1.0 mg/day dose of organe juice is labeled 'OJ.1'.
+
+```{r}
+# boxplots of len for each supp.dose combination
+library(ggplot2)
+df <- ToothGrowth
+df$supp.dose <- interaction(df$supp, df$dose)
+g <- ggplot(aes(y = len, x = supp.dose), data=df) + geom_boxplot()
+g
+```
+
+From the boxplot above, there appears to be an overall increase in length with increased dosage of either supplement. Further comparison of the interaction levels follows in the next code chunks.  
+
+#### OJ.1 vs. OJ.2
+```{r, compare_OJ.1_and_OJ.2}
+# OJ.1 and OJ.2 compared
+t1 <- t.test(df[df$supp.dose=="OJ.1",]$len,
+             df[df$supp.dose=="OJ.2",]$len, 
+             var.equal=TRUE, paired=FALSE)
+```
+
+The null hypothesis is that the true difference in means is zero. In this first case, since the confidence interval `r t1$conf.int[1:2]` does not contain zero and the p-value `r t1$p.value` is below 0.05, we reject the null hypothesis. The alternative is that the difference in means is not zero. This infers that the OJ.2 response in tooth growth length is significantly greater than the OJ.1 response.
+
+#### OJ.1 vs. VC.1
+```{r, compare_OJ.1_and_VC.1}
+# OJ.1 and VC.1 compared
+t2 <- t.test(df[df$supp.dose=="OJ.1",]$len,
+             df[df$supp.dose=="VC.1",]$len, 
+             var.equal=TRUE, paired=FALSE)
+t2$conf.int[1:2]
+t2$p.value
+```
+Again the null hypothesis is true difference in means is zero.  In this case, since the t-test confidence interval does not contain zero and the p-value is less than 0.05, the null hypothesis is rejected. This infers that the mean of OJ.1 is significantly greater than the mean of VC.1.
+
+#### OJ.1 vs. VC.2
+```{r, compare_OJ.1_and_VC.2}
+# OJ.1 and VC.2 compared
+t3 <- t.test(df[df$supp.dose=="OJ.1",]$len,
+             df[df$supp.dose=="VC.2",]$len, 
+             var.equal=TRUE, paired=FALSE)
+```
+The null hypothesis is that there is no difference in the means.  Since the t-test confidence interval `r t3$conf.int[1:2]` contains zero and the p-value `r t3$p.value` is greater than 0.05, we infer that the null hypothesis is true. There is no significant difference in the mean tooth growth length between the 1 mg dose of OJ compared to the 2 mg dose of VC.
+
+#### OJ.2 vs. VC.2
+```{r, compare_OJ.2_and_VC.2}
+# OJ.2 and VC.2 compared
+t4 <- t.test(df[df$supp.dose=="OJ.2",]$len,
+             df[df$supp.dose=="VC.2",]$len, 
+             var.equal=TRUE, paired=FALSE)
+```
+The null hypothesis is that there is no difference in the means.  Since the t-test confidence interval `r t4$conf.int[1:2]` contains zero and the p-value `r t4$p.value` is much greater than 0.05, we infer that the null hypothesis is true. There is no significant difference in the mean tooth growth length between the 2 mg dose of OJ compared to the 2 mg dose of VC.
+
+#### Variance of OJ.1 or OJ.2 vs. VC.2
+```{r, variance_OJ2_VC2}
+var(df[df$supp.dose=="OJ.1",]$len)
+var(df[df$supp.dose=="OJ.2",]$len)
+var(df[df$supp.dose=="VC.2",]$len)
+```
+
+The variance of tooth length in respose to 2 mg doses of OJ is `r var(df[df$supp.dose=="OJ.2",]$len)` which is less than the variance of the lengths in response to 2 mg doses of VC of `r var(df[df$supp.dose=="VC.2",]$len)` or 1 mg doses of OJ at `r var(df[df$supp.dose=="OJ.1",]$len)`.
+
+## Conclusions
+This analysis relied on using a two sample t-test for homogenous variances and independent samples. The T-test can be used to compare the means of two samples under the assumption that the samples are random, independent, and come from a normally distributed population with unknown but equal variances. The T-test is also appropriate due to the smaller number of observations (n=10) in each group.  
+
+The overall conclusions are:  
+        
+* the mean effect from the 2 mg dose of OJ is greater than the mean effet of 1 mg dose of Oj.
+* the mean effect from the 1 mg dose of OJ is significantly greater than the mean effect from 1 mg dose of VC.
+* the mean effect from 1 mg dose of OJ is not significantly different from the mean effect of 2 mg dose of VC.
+* the mean effect from 2 mg dose of OJ is not significantly different than the mean effect of 2 mg dose of VC. The variation of tooth growth achieved with 2 mg dose of OJ is lower than variation with 2 mg dose of VC.
+

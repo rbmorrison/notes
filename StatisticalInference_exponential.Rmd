@@ -1,0 +1,129 @@
+---
+title: 'Statistical Inference Course Project: Exponentials'
+author: "Rich Morrison"
+date: "July 5, 2016"
+output: 
+  pdf_document:
+    fig_caption: true
+---
+
+## Overview
+This project invesigates the exponential distribution in R and compares it to the Central Limit Theorem. The exponential distribution is used to simulate samples of size 40. The means and variance of these samples are calcluated and compared to theoretical calculated values. Finally, the distribution of sample means and variances are compared to a normal distribution.
+
+**Assignment**: Illustrate via simulation and associated explanatory text the properties of the distribution of the mean of 40 exponentials. Use 1000 simulations.
+
+1. Show the sample mean and compare it to the theoretical mean of the distribution.
+2. Show how variable the sample is (via variance) and compare it to the theoretical variance of the distribution.
+3. Show that the distribution is approximately normal. In point 3, focus on the difference between the distribution of a large collection of random exponentials and the distribution of a large collection of averages of 40 exponentials.
+
+## Simulation
+The exponential distribution can be simulated in R with the function **rexp(n, lambda)** where lambda is the rate parameter.  
+
+* The mean of the exponential distribution is **1/lambda**
+* The standard deviation of the exponential distribution is also **1/lambda**.  
+ 
+The histogram in Fig. 1 plots the distribution of 1,000 exponential random variables with lambda equal to 0.2.  
+ 
+```{r, plot_exponential_histogram, fig.width=4.5, fig.height=3.825, fig.cap="Distribution of 1000 random exponential variables with lambda=0.2."}
+set.seed(99)
+lambda <- 0.2
+n <- 1000 # number of simulation iterations
+hist(rexp(n, lambda), main="Distribution of Random Exponentials")
+```
+
+This next simulation creates 1000 sets of 40 exponentials with the rate parameter, lambda, set equal to 0.2. The means are saved for further comparison with theoretical distribution parameters. 
+
+```{r, simulate_exponential_samples}
+# simulate n collections of 40 sample exponentials
+# save the sample means for analysis
+lambda <- 0.2
+n <- 1000 # number of simulation iterations
+ns <- 40   # number of exponentials in each sample
+exp_sample_means <- NULL
+for (i in 1:n) {
+        sample <- rexp(ns, lambda)
+        exp_sample_means = c(exp_sample_means, mean(sample))
+}
+summary(exp_sample_means)
+```
+ 
+## Sample Mean Vs. Theoretical Mean
+The mean of the distribution of sample means and the theoretical mean are calculated and compared on a plot of the distribution of sample means. 
+
+```{r, compare_simulated_sample_means, fig.width=4.5, fig.height=3.825, fig.cap="Distribution of Sample Means for 1000 sets of samples consisting of 40 random exponentials (lambda=0.2)"}
+# the theoretical mean is 1/lambda:
+mean_theoretical <- 1/lambda
+mean_theoretical
+
+# the simulated mean of the means is:
+mean_simulated <- mean(exp_sample_means)
+mean_simulated
+
+# plot histogram and mean of the sample means 
+h <- hist(exp_sample_means, main="Distribution of Sample Means")
+abline(v=mean_simulated, col="blue", lwd=2)
+
+# overlay the theoretical mean in blue
+abline(v=mean_theoretical, col="red", lwd=2)
+```
+
+Figure 2 plots the distribution of the means of simulated samples of exponential variables. The mean of this distribution `r mean_simulated` is very close to the theoretical mean of the exponential distribution `r mean_theoretical`. 
+
+## Sample Variance vs. Theoretical Variance
+The theoretical variance and simulated variance are calculated and compared below.
+
+```{r, compare_simulated_sample_variance}
+# the theoretical variance of the means is:
+var_theoretical <- (1/lambda^2)/ns
+var_theoretical 
+
+# the simulated variance of the means is:
+var_simulated <- var(exp_sample_means)
+var_simulated
+
+# the theoretical standard deviation of means is:
+stdev_theoretical <- sqrt(var_theoretical)
+stdev_theoretical
+
+# the simulated standard deviation of the means is:
+stdev_simulated <- sd(exp_sample_means)
+stdev_simulated
+```
+
+While the variance of the distribution of random exponential variables is `r (1/lambda)^2`, the variance of the distribution of the means of the samples of those variables is much smaller at `r var_simulated`.  The variance of the sample mean decreases with increased observations. Since the samples consist of ns=40 observations, the theoretical variance of the sample means is (1/lambda^2)/ns = `r var_theoretical`. The variance of the means of the simulated sample sets shows good agreement with the theoretcial value.  
+
+Figure 3 below shows a comparison of the theoretical variance normally distributed to the simulated variance of the means. 
+
+```{r, plot_sample_variance, fig.width=5, fig.height=4.25, fig.cap="Boxplots depicting the theoretical variance (normally distributed) and compared to the variance of the simulated distribution of sample means." }
+# plot the theoretcial means variance and variance of simulated means
+q1 <- qnorm(0.25, mean_theoretical, stdev_theoretical)
+q2 <- qnorm(0.5, mean_theoretical, stdev_theoretical)
+q3 <- qnorm(0.75, mean_theoretical, stdev_theoretical)
+lower <- q1 - 1.5*(q3-q1)
+upper <- q3 + 1.5*(q3-q1)
+tmp <- list(stats=rbind(lower, q1,q2,q3, upper), out=numeric(0),
+            group=numeric(0),names='' )
+par(mfrow=c(1,2))
+bxp(tmp, ylim=c(2.5,7.5), main="Theoretical", ylab="Theoretical Mean of Exp. Samples (lambda=0.2)")
+boxplot(exp_sample_means, main="Simulated", ylab="Mean of 40 Simulated Exponentials (lambda=0.2)")
+```
+
+## Distribution
+To compare the distribution of sample means to a normal distribution, Figure 4 plots a histogram of sample means with the theoretical normal distribution and mean overlayed in red.  The mean of the simulated exponential samples is overlayed in blue (not visible due to closeness).
+
+```{r, compare_sample_distribution, fig.width=5, fig.height=4.5, fig.cap="Sample mean distribution with overlay of Normal Distribution with theoretical variance for distribution of exponential samples."}
+h2 <- hist(exp_sample_means, main="Sample Means vs. Normal Distribution")
+abline(v=mean_simulated, col="blue", lwd=2)
+abline(v=mean_theoretical, col="red", lwd=2)
+
+# overlay normal distribution based on theoretical mean/sd
+xfit <- seq(min(exp_sample_means), max(exp_sample_means),
+            length=length(exp_sample_means))
+yfit <- dnorm(xfit, mean=mean_theoretical, sd=stdev_theoretical)
+yfit <- yfit * diff(h$mids[1:2]) * length(exp_sample_means)
+lines(xfit, yfit, col='red', lwd=2)
+```
+
+## Conclusion
+
+The distribution of the means of 40 simulated exponentials shows to be approximately normal with negligible difference in the simulated exponential mean of the distribution. There is a large difference between the distribution of a large collection of random exponentials in Figure 1, which is not a normal distribution, and the distribution of a large collection of averages of 40 exponentials, which becomes more normally distributed with increased size of the collection of samples (see Fig. 4). As the number of iterations of simulation increases, the variation and mean of the distribution of simulated sample means will approach the theoretical mean and variance for a set of exponential random variables.

@@ -1,0 +1,337 @@
+---
+title: "Reproducible Research: Peer Assessment 2"
+author: "Rich Morrison"
+date: "May 18, 2016"
+output: 
+  html_document:
+    keep_md: true
+---
+
+## Population Health and Economic Impacts from Storm Events in the U.S.
+
+### Introduction
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage. Preventing or mitigating such outcomes is a key concern. This project explores the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database to answer these two questions of interest:  
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+### Synopsis
+The NOAA Storm Event database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.  It includes events starting in 1950 and ending November 2011.  The earlier years of the database contain fewer recorded events, most likely due to lack of good records.  
+
+The results of the analysis show the leading storm event types causing fatality/injury to persons and economic damage to property and crops.
+
+
+### Loading and Processing Raw Data
+The data is obtained from the NOAA Storm Database publically available. The raw data file is a commma-separated file compressed via bzip2. 
+[Link to data file](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2). The file size is 48Mb and may take several minutes to download and read into a data.frame. A more complete explanation of the data is provided in the National Weather Service [documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) and the National Climatic Data Center [Storm Events FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf).  
+
+#### Reading in the data
+We start by downloading the data file and reviewing the size, format, and data types included.
+
+```{r readdata,echo=TRUE}
+# read data
+temp <- tempfile()
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", temp)
+#temp <- "StormData.csv.bz2"
+dat <- read.csv(temp, header=TRUE, sep=",", 
+                check.names=FALSE, comment.char="", 
+                stringsAsFactors=FALSE)
+unlink(temp)
+
+# check the data
+dim(dat)
+head(dat)
+str(dat)
+```
+
+#### Pre-Processing: Subset Variables of Interest
+For the questions of interest, only a subset of the raw data is required for analysis. The following variables are retained for the analysis data set:  
+
+* EVTYPE
+* FATALTIES
+* INJURIES
+* PROPDMG
+* PROPDMGEXP
+* CROPDMG
+* CROPDMGEXP
+
+```{r processdat,echo=TRUE}
+# subset the raw data to eliminate unneeded columns for analysis
+stormdat <- dat[c("EVTYPE","FATALITIES","INJURIES","PROPDMG",
+                  "PROPDMGEXP","CROPDMG","CROPDMGEXP")]
+# check the header names 
+head(stormdat)
+# How many missing values?
+sum(is.na(stormdat))  
+# check summary stats for the selected variables
+summary(stormdat)
+```
+
+#### Pre-Processing: Damage Estimate Values
+Next the damage estimates for property and crops are transformed to provide numerical values from the 2-column value-character pairs that are in the original dataset. Section 2.7 of the National Weather Service documentation gives the valid damage magnitude codes as "K" for thousands, "M" for millions, and "B" for billions.  There are only a small number of events that list invalid codes.  The event rows with valid codes and multipliers are transformed to numeric damage cost estimate values.
+
+```{r damageamounts,echo=TRUE}
+library(dplyr)
+
+# set exponent codes and their multipliers that are accepted as valid
+exp_codes <- c("K","k","M","m","B","b","")
+exp_mult <- c(1000, 1000, 1000000, 1000000, 1000000000, 1000000000, 0)
+exp_vals <- data.frame(exp_codes, exp_mult)
+
+# check low proportion/number rows with invaliid damage magnitude values
+nrow(stormdat[!stormdat$PROPDMGEXP %in% exp_codes,])
+nrow(stormdat[!stormdat$CROPDMGEXP %in% exp_codes,])
+
+# retain only the rows with valid codes since number invalid is low
+stormdat <- stormdat[stormdat$PROPDMGEXP %in% exp_codes,]
+stormdat <- stormdat[stormdat$CROPDMGEXP %in% exp_codes,]
+
+# Calculate the damage amounts
+stormdat2 <- stormdat
+
+# Note:  the following method looks repetitive, but was found to be much
+# faster and smaller output than using merge() from dplyr package.
+stormdat$propdamage <- NA
+stormdat$cropdamage <- NA
+stormdat$propdamage[stormdat$PROPDMGEXP %in% c("K", "k")] <- 
+        1000 * stormdat$PROPDMG[stormdat$PROPDMGEXP %in% c("K", "k")]
+stormdat$propdamage[stormdat$PROPDMGEXP %in% c("M", "m")] <- 
+        1000000 * stormdat$PROPDMG[stormdat$PROPDMGEXP %in% c("M", "m")]
+stormdat$propdamage[stormdat$PROPDMGEXP %in% c("B", "b")] <- 
+        1000000000 * stormdat$PROPDMG[stormdat$PROPDMGEXP %in% c("B", "b")]
+stormdat$cropdamage[stormdat$CROPDMGEXP %in% c("K", "k")] <- 
+        1000 * stormdat$CROPDMG[stormdat$CROPDMGEXP %in% c("K", "k")]
+stormdat$cropdamage[stormdat$CROPDMGEXP %in% c("M", "m")] <- 
+        1000000 * stormdat$CROPDMG[stormdat$CROPDMGEXP %in% c("M", "m")]
+stormdat$cropdamage[stormdat$CROPDMGEXP %in% c("B", "b")] <- 
+        1000000000 * stormdat$CROPDMG[stormdat$CROPDMGEXP %in% c("B", "b")]
+```
+
+#### Pre-Processing: Event Type Categories
+There appear to be many human entered values for the event type field (EVTYPE). According to the National Weather Service documentation:  
+
+>Section 2.1 Permitted Storm Events. The only events permitted in _Storm Data_ are listed in Table 1. Storm Data Event Table.  
+
+Table 2.1 has a list of 48 storm event types.  There are `r length(unique(stormdat$EVTYPE))` unique values for event type in the data set which is problematic for reasonably classifying the causes of damage, injury, and fatality.
+```{r eventypes,echo=TRUE}
+# Unique values of EVTYPE are problematic for reasonably aggregating data 
+u <- unique(stormdat$EVTYPE)
+head(u[order(u)],30)
+tail(u[order(u)],30)
+```
+
+In order to better classify causes to answer the questions of interest, the data is transformed by aggregating similar event type labels to more closely follow the National Weather Service standard storm event table.
+```{r combineeventtypes,echo=TRUE}
+
+# list of NWS categories
+events <- c("Avalanche",
+            "Coastal Flood/Erosion",
+            "Cold/Wind Chill",
+            "Debris Flow",
+            "Drought",
+            "Dust Devil/Storm",
+            "Heat",
+            "Fire/Smoke",
+            "Flood",
+            "Frost/Freeze",
+            "Funnel Cloud",
+            "Fog",
+            "Hail",
+            "Heat",
+            "Rain",
+            "Snow",
+            "Surf",
+            "Hurricane/Typhoon",
+            "Ice",
+            "Snow",
+            "Flood",
+            "Lightning",
+            "Rip Current",
+            "Seiche",
+            "Sleet",
+            "Storm Surge",
+            "Wind",
+            "Thunderstorm",
+            "Tide",
+            "Tornado",
+            "Tropical Depression/Storm",
+            "Tsunami",
+            "Volcanic Ash",
+            "Waterspout",
+            "Wildfire",
+            "Winter Storm/Blizzard",
+            "Winter Weather")
+
+length(events)
+
+# aggregate similar categories
+stormdat$EVTYPE[grep(".*summary.*", stormdat$EVTYPE, ignore.case=TRUE)] <- NA
+stormdat$EVTYPE[grep(".*wind chill.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Cold/Chill"
+stormdat$EVTYPE[grep(".*BLIZZ.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Winter Storm/Blizzard"
+stormdat$EVTYPE[grep(".*snow.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Snow"
+stormdat$EVTYPE[grep(".*tsun.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Tsunami"
+stormdat$EVTYPE[grep(".*typh.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Hurricane/Typhoon"
+stormdat$EVTYPE[grep(".*hurric.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Hurricane/Typhoon"
+stormdat$EVTYPE[grep(".*floyd.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Hurricane/Typhoon"
+stormdat$EVTYPE[grep(".*avalan.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Avalanche"
+stormdat$EVTYPE[grep(".*Volcan.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Volcanic Ash"
+stormdat$EVTYPE[grep(".*storm surge.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Storm Surge"
+stormdat$EVTYPE[grep(".*tide.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Tide"
+stormdat$EVTYPE[grep(".*surf.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Surf"
+stormdat$EVTYPE[grep(".*current.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Rip Current"
+stormdat$EVTYPE[grep(".*tropical.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Tropical Depression/Storm"
+stormdat$EVTYPE[grep(".*coastal.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Coastal Flood/Erosion"
+stormdat$EVTYPE[grep(".*flood.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Flood"
+stormdat$EVTYPE[grep(".*smoke.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Fire/Smoke"
+stormdat$EVTYPE[grep(".*fire.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Fire/Smoke"
+stormdat$EVTYPE[grep(".*winter.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Winter Storm/Blizzard"
+stormdat$EVTYPE[grep(".*lightn.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Lightning"
+stormdat$EVTYPE[grep(".*ice.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Ice"
+stormdat$EVTYPE[grep(".*icy.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Ice"
+stormdat$EVTYPE[grep(".*frost.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Frost/Freeze"
+stormdat$EVTYPE[grep(".*freez.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Frost/Freeze"
+stormdat$EVTYPE[grep(".*glaze.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Frost/Freeze"
+stormdat$EVTYPE[grep(".*drought.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Drought"
+stormdat$EVTYPE[grep(".*heat.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Heat"
+stormdat$EVTYPE[grep(".*dust.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Dust Devil/Storm"
+stormdat$EVTYPE[grep(".*heat.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Heat"
+stormdat$EVTYPE[grep(".*fog.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Fog"
+stormdat$EVTYPE[grep(".*rain.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Rain"
+stormdat$EVTYPE[grep(".*hail.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Hail"
+stormdat$EVTYPE[grep(".*sleet.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Sleet"
+stormdat$EVTYPE[grep(".*torn.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Tornado"
+stormdat$EVTYPE[grep(".*slide.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Debris Flow"
+stormdat$EVTYPE[grep(".*Waterspout.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Waterspout"
+stormdat$EVTYPE[grep(".*tstm.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Thunderstorm"
+stormdat$EVTYPE[grep(".*thunderstorm.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Thunderstorm"
+stormdat$EVTYPE[grep(".*funnel.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Funnel Cloud"
+stormdat$EVTYPE[grep(".*beach.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Beach Erosion"
+stormdat$EVTYPE[grep(".*cold.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Cold/Chill"
+stormdat$EVTYPE[grep(".*hypoth.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Cold/Chill"
+stormdat$EVTYPE[grep(".*landslump.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Debris Flow"
+stormdat$EVTYPE[grep(".*landspout.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Funnel Cloud"
+stormdat$EVTYPE[grep(".*cloud.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Funnel Cloud"
+stormdat$EVTYPE[grep(".*dry.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Drought"
+stormdat$EVTYPE[grep(".*urban.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Flood"
+stormdat$EVTYPE[grep(".*high water.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Flood"
+stormdat$EVTYPE[grep(".*microburst.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Wind"
+stormdat$EVTYPE[grep(".*wnd.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Wind"
+stormdat$EVTYPE[grep(".*seas", stormdat$EVTYPE, ignore.case=TRUE)] <- "Surf"
+stormdat$EVTYPE[grep(".*wave.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Surf"
+stormdat$EVTYPE[grep(".*swells.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Surf"
+stormdat$EVTYPE[grep(".*warm.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Heat"
+stormdat$EVTYPE[grep(".*hot.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Heat"
+stormdat$EVTYPE[grep(".*heat.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Heat"
+stormdat$EVTYPE[grep(".*warm.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Heat"
+stormdat$EVTYPE[grep(".*burst.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Wind"
+stormdat$EVTYPE[grep(".*wet.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Rain"
+stormdat$EVTYPE[grep(".*heavy.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Rain"
+stormdat$EVTYPE[grep(".*precip.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Rain"
+stormdat$EVTYPE[grep(".*flood.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Flood"
+stormdat$EVTYPE[grep(".*wind.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Wind"
+stormdat$EVTYPE[grep("Cold/Chill", stormdat$EVTYPE, ignore.case=TRUE)] <- "Cold/Wind Chill"
+stormdat$EVTYPE[grep(".*seiche.*", stormdat$EVTYPE, ignore.case=TRUE)] <- "Seiche"
+
+
+# check the new number of unique values for event types
+u <- unique(stormdat$EVTYPE)
+write.csv(u,"eventtypes.csv")
+length(u)
+u
+
+# check event types labeled different than the standard list
+length(stormdat$EVTYPE[!stormdat$EVTYPE %in% events])
+table(stormdat$EVTYPE[!stormdat$EVTYPE %in% events])
+ 
+# since the small number remaining entries are ambiguous, set event type NA
+stormdat$EVTYPE[!stormdat$EVTYPE %in% events] <- NA
+u <- unique(stormdat$EVTYPE)
+write.csv(u,"eventtypesFinal.csv")
+length(u)
+u
+
+table(stormdat$EVTYPE)
+```
+The data has been transformed to match 32 categories of Event Type (EVTYPE). This set can be better analyzed for meaningful insights to the two questions of interest at the top.
+
+#### Analysis:  Aggregating Property Damage, Crop Damage, Injuries, and Fatalities
+The data is aggregated along the cleaned event type list for damage, injury, and fatality totals to provide the relative severity of each type of weather event.
+
+```{r causecomparisons,echo=TRUE}
+#agregate on the damage amounts and fatality/injury numbers
+propdmg <- aggregate(propdamage ~ EVTYPE, dat=stormdat, sum)
+cropdmg <- aggregate(cropdamage ~ EVTYPE, dat=stormdat, sum)
+damage <- merge(propdmg, cropdmg, by.x="EVTYPE", by.y="EVTYPE")
+fatal <- aggregate(FATALITIES ~ EVTYPE, dat=stormdat, sum)
+injured <- aggregate(INJURIES ~ EVTYPE, dat=stormdat, sum)
+
+# sort the data.frames from high to low damage, fatalities, or injuries
+propdmg <- arrange(propdmg, desc(propdamage))
+cropdmg <- arrange(cropdmg, desc(cropdamage))
+fatal <- arrange(fatal, desc(FATALITIES))
+injured <- arrange(injured, desc(INJURIES))
+
+damage <- arrange(damage, desc(propdamage+cropdamage))
+damage
+
+```
+
+### Results
+
+#### Population Health Impacts of Storms  
+
+**_Question 1: Across the United States, which types of events are most harmful with respect to population health?_**
+
+When comparing the total number of fatalities and injuries across the storm event categories, these five categories lead in both fatality and injury numbers:  
+
+* Tornado
+* Heat
+* Flood
+* Lightning
+* Thunderstorm
+
+```{r fatal_injured_compare,echo=TRUE}
+options("scipen" = 20)
+par(mar=c(10,6,4,2))
+barplot(fatal$FATALITIES, 
+        names=fatal$EVTYPE,
+        xlab="",
+        ylab="Number Fatalities",
+        main="U.S. Storm Event Fatalities (1950-2011)",
+        las=2)
+
+
+par(mar=c(10,6,4,2))
+barplot(injured$INJURIES, 
+        names=injured$EVTYPE,
+        xlab="",
+        ylab="Number Injured",
+        main="U.S. Storm Event Injuries (1950-2011)",
+        las=2)
+```
+
+#### Econcomic Impacts of Storm  
+
+**_Question 2: Across the United States, which types of events have the greatest economic consequences?_**
+
+The total damage to property and crops was used to get a rough look at the magnitude of damage caused by each category of storm event.  The most severe storm events causing the most economic consequences are:  
+
+* Flood
+* Hurricane/Typhoon
+* Tornado
+* Storm Surge
+
+```{r prop_crop_damage_compare,echo=TRUE}
+par(mar=c(10,6,4,2))
+barplot((damage$propdamage+damage$cropdamage)/1000000000,
+        names=damage$EVTYPE,
+        xlab="",
+        ylab="Total Property and Crop Damage (US $Billions)",
+        main="U.S. Storm Event Property Damage (1950-2011)",
+        las=2)
+
+```
+
+### Conclusions
+After a quick look at the National Weather Service data for damage, injuries and fatalities caused by storm events in the United States, the leading storm events with impacts were displayed. Further risk analysis could produce a comparison of frequency of storm events and the impact levels per storm event.  Regional distinctions in storm event severity and frequency could also be produced.
+
